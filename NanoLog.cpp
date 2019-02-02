@@ -24,6 +24,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 */
 
 #include "NanoLog.hpp"
+#include <Clock.hpp>
 #include <cstring>
 #include <chrono>
 #include <ctime>
@@ -36,26 +37,22 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 namespace
 {
 
-    /* Returns microseconds since epoch */
     uint64_t timestamp_now()
     {
-    	return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+    	return slt::Clock::now().time_since_epoch().count();
     }
 
-    /* I want [2016-10-13 00:01:23.528514] */
+    /* I want [2016-10-13T00:01:23.528514799] */
     void format_timestamp(std::ostream & os, uint64_t timestamp)
     {
-	// The next 3 lines do not work on MSVC!
-	// auto duration = std::chrono::microseconds(timestamp);
-	// std::chrono::high_resolution_clock::time_point time_point(duration);
-	// std::time_t time_t = std::chrono::high_resolution_clock::to_time_t(time_point);
-	std::time_t time_t = timestamp / 1000000;
-	auto gmtime = std::gmtime(&time_t);
+	std::time_t time_t = timestamp / 1000000000;
+        struct tm result;
+	auto gmtime = gmtime_r(&time_t, &result);
 	char buffer[32];
-	strftime(buffer, 32, "%Y-%m-%d %T.", gmtime);
-	char microseconds[7];
-	sprintf(microseconds, "%06llu", timestamp % 1000000);
-	os << '[' << buffer << microseconds << ']';
+	strftime(buffer, 32, "%Y-%m-%dT%T.", gmtime);
+	char subseconds[10];
+	sprintf(subseconds, "%09lu", timestamp % 1000000000);
+	os << '[' << buffer << subseconds << ']';
     }
 
     std::thread::id this_thread_id()
@@ -119,7 +116,7 @@ namespace nanolog
 	, m_buffer_size(sizeof(m_stack_buffer))
     {
 	encode < uint64_t >(timestamp_now());
-	encode < std::thread::id >(this_thread_id());
+	//encode < std::thread::id >(this_thread_id());
 	encode < string_literal_t >(string_literal_t(file));
 	encode < string_literal_t >(string_literal_t(function));
 	encode < uint32_t >(line);
@@ -133,7 +130,7 @@ namespace nanolog
 	char * b = !m_heap_buffer ? m_stack_buffer : m_heap_buffer.get();
 	char const * const end = b + m_bytes_used;
 	uint64_t timestamp = *reinterpret_cast < uint64_t * >(b); b += sizeof(uint64_t);
-	std::thread::id threadid = *reinterpret_cast < std::thread::id * >(b); b += sizeof(std::thread::id);
+	//std::thread::id threadid = *reinterpret_cast < std::thread::id * >(b); b += sizeof(std::thread::id);
 	string_literal_t file = *reinterpret_cast < string_literal_t * >(b); b += sizeof(string_literal_t);
 	string_literal_t function = *reinterpret_cast < string_literal_t * >(b); b += sizeof(string_literal_t);
 	uint32_t line = *reinterpret_cast < uint32_t * >(b); b += sizeof(uint32_t);
@@ -142,7 +139,7 @@ namespace nanolog
 	format_timestamp(os, timestamp);
 
 	os << '[' << to_string(loglevel) << ']'
-	   << '[' << threadid << ']'
+	   //<< '[' << threadid << ']'
 	   << '[' << file.m_s << ':' << function.m_s << ':' << line << "] ";
 
 	stringify(os, b, end);
@@ -316,12 +313,14 @@ namespace nanolog
 	return *this;
     }
 
+    /*
     struct BufferBase
     {
 	virtual ~BufferBase() = default;
     	virtual void push(NanoLogLine && logline) = 0;
 	virtual bool try_pop(NanoLogLine & logline) = 0;
     };
+    */
 
     struct SpinLock
     {
@@ -340,7 +339,8 @@ namespace nanolog
     };
 
     /* Multi Producer Single Consumer Ring Buffer */
-    class RingBuffer : public BufferBase
+    template <size_t m_size>
+    class RingBuffer // : public BufferBase
     {
     public:
     	struct alignas(64) Item
@@ -358,9 +358,9 @@ namespace nanolog
 	    NanoLogLine logline;
     	};
 	
-    	RingBuffer(size_t const size) 
-    	    : m_size(size)
-    	    , m_ring(static_cast<Item*>(std::malloc(size * sizeof(Item))))
+    	RingBuffer(/*size_t const size*/) 
+    	    //: m_size(size)
+    	    : m_ring(static_cast<Item*>(std::malloc(m_size * sizeof(Item))))
     	    , m_write_index(0)
     	    , m_read_index(0)
     	{
@@ -380,7 +380,7 @@ namespace nanolog
     	    std::free(m_ring);
     	}
 
-    	void push(NanoLogLine && logline) override
+    	void push(NanoLogLine && logline) //override
     	{
     	    unsigned int write_index = m_write_index.fetch_add(1, std::memory_order_relaxed) % m_size;
     	    Item & item = m_ring[write_index];
@@ -389,7 +389,7 @@ namespace nanolog
 	    item.written = 1;
     	}
 
-    	bool try_pop(NanoLogLine & logline) override
+    	bool try_pop(NanoLogLine & logline) //override
     	{
     	    Item & item = m_ring[m_read_index % m_size];
     	    SpinLock spinlock(item.flag);
@@ -407,13 +407,13 @@ namespace nanolog
     	RingBuffer& operator=(RingBuffer const &) = delete;
 
     private:
-    	size_t const m_size;
+    	//size_t const m_size;
     	Item * m_ring;
     	std::atomic < unsigned int > m_write_index;
 	char pad[64];
     	unsigned int m_read_index;
     };
-
+    using ExactBuffer = RingBuffer<1ul * 1024 * 4>;
 
     class Buffer
     {
@@ -473,6 +473,7 @@ namespace nanolog
 	std::atomic < unsigned int > m_write_state[size + 1];
     };
 
+    /*
     class QueueBuffer : public BufferBase
     {
     public:
@@ -554,6 +555,7 @@ namespace nanolog
 	std::atomic_flag m_flag;
     	unsigned int m_read_index;
     };
+    */
 
     class FileWriter
     {
@@ -608,13 +610,14 @@ namespace nanolog
     public:
 	NanoLogger(NonGuaranteedLogger ngl, std::string const & log_directory, std::string const & log_file_name, uint32_t log_file_roll_size_mb)
 	    : m_state(State::INIT)
-	    , m_buffer_base(new RingBuffer(std::max(1u, ngl.ring_buffer_size_mb) * 1024 * 4))
+	    //, m_buffer_base(new RingBuffer<1ul * 1024 * 4>()) /*(std::max(1u, ngl.ring_buffer_size_mb) * 1024 * 4))*/
 	    , m_file_writer(log_directory, log_file_name, std::max(1u, log_file_roll_size_mb))
 	    , m_thread(&NanoLogger::pop, this)
 	{
 	    m_state.store(State::READY, std::memory_order_release);
 	}
 
+        /*
 	NanoLogger(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, uint32_t log_file_roll_size_mb)
 	    : m_state(State::INIT)
 	    , m_buffer_base(new QueueBuffer())
@@ -623,6 +626,7 @@ namespace nanolog
 	{
 	    m_state.store(State::READY, std::memory_order_release);
 	}
+        */
 
 	~NanoLogger()
 	{
@@ -632,7 +636,7 @@ namespace nanolog
 
 	void add(NanoLogLine && logline)
 	{
-	    m_buffer_base->push(std::move(logline));
+	    m_buffer_base.push(std::move(logline));
 	}
 	
 	void pop()
@@ -645,14 +649,14 @@ namespace nanolog
 
 	    while (m_state.load() == State::READY)
 	    {
-		if (m_buffer_base->try_pop(logline))
+		if (m_buffer_base.try_pop(logline))
 		    m_file_writer.write(logline);
 		else
 		    std::this_thread::sleep_for(std::chrono::microseconds(50));
 	    }
 	    
 	    // Pop and log all remaining entries
-	    while (m_buffer_base->try_pop(logline))
+	    while (m_buffer_base.try_pop(logline))
 	    {
 		m_file_writer.write(logline);
 	    }
@@ -667,7 +671,7 @@ namespace nanolog
 	};
 
 	std::atomic < State > m_state;
-	std::unique_ptr < BufferBase > m_buffer_base;
+	ExactBuffer m_buffer_base;
 	FileWriter m_file_writer;
 	std::thread m_thread;
     };
@@ -687,11 +691,13 @@ namespace nanolog
 	atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
     }
 
+    /*
     void initialize(GuaranteedLogger gl, std::string const & log_directory, std::string const & log_file_name, uint32_t log_file_roll_size_mb)
     {
 	nanologger.reset(new NanoLogger(gl, log_directory, log_file_name, log_file_roll_size_mb));
 	atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
     }
+    */
 
     std::atomic < unsigned int > loglevel = {0};
 
