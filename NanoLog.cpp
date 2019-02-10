@@ -413,7 +413,7 @@ namespace nanolog
 	char pad[64];
     	unsigned int m_read_index;
     };
-    using ExactBuffer = RingBuffer<1ul * 1024 * 4>;
+    using ExactBuffer = RingBuffer<1ul * 4 * 4>; // 4kb
 
     class Buffer
     {
