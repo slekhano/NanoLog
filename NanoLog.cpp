@@ -614,6 +614,10 @@ namespace nanolog
 	    , m_file_writer(log_directory, log_file_name, std::max(1u, log_file_roll_size_mb))
 	    , m_thread(&NanoLogger::pop, this)
 	{
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(0, &cpuset);
+        pthread_setaffinity_np(m_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
 	    m_state.store(State::READY, std::memory_order_release);
 	}
 
