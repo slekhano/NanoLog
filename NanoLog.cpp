@@ -52,7 +52,7 @@ namespace
 	strftime(buffer, 32, "%Y-%m-%dT%T.", gmtime);
 	char subseconds[10];
 	sprintf(subseconds, "%09lu", timestamp % 1000000000);
-	os << '[' << buffer << subseconds << ']';
+	os << buffer << subseconds << ' ';
     }
 
     std::thread::id this_thread_id()
@@ -138,9 +138,8 @@ namespace nanolog
 
 	format_timestamp(os, timestamp);
 
-	os << '[' << to_string(loglevel) << ']'
-	   //<< '[' << threadid << ']'
-	   << '[' << file.m_s << ':' << function.m_s << ':' << line << "] ";
+	os << to_string(loglevel) << ' '
+	   << file.m_s << ':' << function.m_s << ':' << line << " ";
 
 	stringify(os, b, end);
 
@@ -262,7 +261,8 @@ namespace nanolog
 	char * b = buffer();
 	auto type_id = TupleIndex < char *, SupportedTypes >::value;
 	*reinterpret_cast<uint8_t*>(b++) = static_cast<uint8_t>(type_id);
-	memcpy(b, arg, length + 1);
+	memcpy(b, arg, length); // do not copy 0
+    b[length] = 0; // put it directly
 	m_bytes_used += 1 + length + 1;
     }
 
@@ -273,7 +273,13 @@ namespace nanolog
 
     NanoLogLine& NanoLogLine::operator<<(std::string const & arg)
     {
-	encode_c_string(arg.c_str(), arg.length());
+	encode_c_string(arg.data(), arg.length());
+	return *this;
+    }
+
+    NanoLogLine& NanoLogLine::operator<<(std::string_view const & arg)
+    {
+	encode_c_string(arg.data(), arg.length());
 	return *this;
     }
 
@@ -413,7 +419,8 @@ namespace nanolog
 	char pad[64];
     	unsigned int m_read_index;
     };
-    using ExactBuffer = RingBuffer<1ul * 4 * 4>; // 4kb
+    using ExactBuffer = RingBuffer<1024ul * 4 * 4>; // 4kb
+    //using ExactBuffer = RingBuffer<1ul * 4 * 4>; // 4kb
 
     class Buffer
     {
