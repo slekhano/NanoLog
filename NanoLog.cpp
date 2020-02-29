@@ -4,21 +4,21 @@ Distributed under the MIT License (MIT)
 
     Copyright (c) 2016 Karthik Iyengar
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of 
-this software and associated documentation files (the "Software"), to deal in the 
-Software without restriction, including without limitation the rights to 
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies 
-of the Software, and to permit persons to whom the Software is furnished 
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in the
+Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished
 to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included 
+The above copyright notice and this permission notice shall be included
 in all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
-INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS 
-OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER 
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS
+OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 */
@@ -65,13 +65,13 @@ namespace
     struct TupleIndex;
 
     template < typename T,typename ... Types >
-    struct TupleIndex < T, std::tuple < T, Types... > > 
+    struct TupleIndex < T, std::tuple < T, Types... > >
     {
 	static constexpr const std::size_t value = 0;
     };
 
     template < typename T, typename U, typename ... Types >
-    struct TupleIndex < T, std::tuple < U, Types... > > 
+    struct TupleIndex < T, std::tuple < U, Types... > >
     {
 	static constexpr const std::size_t value = 1 + TupleIndex < T, std::tuple < Types... > >::value;
     };
@@ -182,7 +182,7 @@ namespace nanolog
 	    return;
 
 	int type_id = static_cast < int >(*start); start++;
-	
+
 	switch (type_id)
 	{
 	case 0:
@@ -216,7 +216,7 @@ namespace nanolog
     {
 	return !m_heap_buffer ? &m_stack_buffer[m_bytes_used] : &(m_heap_buffer.get())[m_bytes_used];
     }
-    
+
     void NanoLogLine::resize_buffer_if_needed(size_t additional_bytes)
     {
 	size_t const required_size = m_bytes_used + additional_bytes;
@@ -256,7 +256,7 @@ namespace nanolog
     {
 	if (length == 0)
 	    return;
-	
+
 	resize_buffer_if_needed(1 + length + 1);
 	char * b = buffer();
 	auto type_id = TupleIndex < char *, SupportedTypes >::value;
@@ -351,20 +351,20 @@ namespace nanolog
     public:
     	struct alignas(64) Item
     	{
-	    Item() 
+	    Item()
 		: flag{ ATOMIC_FLAG_INIT }
 		, written(0)
 		, logline(LogLevel::INFO, nullptr, nullptr, 0)
 	    {
 	    }
-	    
+
 	    std::atomic_flag flag;
 	    char written;
 	    char padding[256 - sizeof(std::atomic_flag) - sizeof(char) - sizeof(NanoLogLine)];
 	    NanoLogLine logline;
     	};
-	
-    	RingBuffer(/*size_t const size*/) 
+
+    	RingBuffer(/*size_t const size*/)
     	    //: m_size(size)
     	    : m_ring(static_cast<Item*>(std::malloc(m_size * sizeof(Item))))
     	    , m_write_index(0)
@@ -409,7 +409,7 @@ namespace nanolog
     	    return false;
     	}
 
-    	RingBuffer(RingBuffer const &) = delete;	
+    	RingBuffer(RingBuffer const &) = delete;
     	RingBuffer& operator=(RingBuffer const &) = delete;
 
     private:
@@ -419,7 +419,8 @@ namespace nanolog
 	char pad[64];
     	unsigned int m_read_index;
     };
-    using ExactBuffer = RingBuffer<1024ul * 4 * 4>; // 4kb
+    //using ExactBuffer = RingBuffer<1024ul * 1024ul>;
+    using ExactBuffer = RingBuffer<1024ul * 4 * 4>;
     //using ExactBuffer = RingBuffer<1ul * 4 * 4>; // 4kb
 
     class Buffer
@@ -472,7 +473,7 @@ namespace nanolog
 	    return false;
     	}
 
-    	Buffer(Buffer const &) = delete;	
+    	Buffer(Buffer const &) = delete;
     	Buffer& operator=(Buffer const &) = delete;
 
     private:
@@ -547,7 +548,7 @@ namespace nanolog
 	    m_buffers.push(std::move(next_write_buffer));
 	    m_write_index.store(0, std::memory_order_relaxed);
 	}
-	
+
 	Buffer * get_next_read_buffer()
 	{
 	    SpinLock spinlock(m_flag);
@@ -573,7 +574,7 @@ namespace nanolog
 	{
 	    roll_file();
 	}
-	
+
 	void write(NanoLogLine & logline)
 	{
 	    auto pos = m_os->tellp();
@@ -649,13 +650,13 @@ namespace nanolog
 	{
 	    m_buffer_base.push(std::move(logline));
 	}
-	
+
 	void pop()
 	{
 	    // Wait for constructor to complete and pull all stores done there to this thread / core.
 	    while (m_state.load(std::memory_order_acquire) == State::INIT)
 		std::this_thread::sleep_for(std::chrono::microseconds(50));
-	    
+
 	    NanoLogLine logline(LogLevel::INFO, nullptr, nullptr, 0);
 
 	    while (m_state.load() == State::READY)
@@ -665,14 +666,14 @@ namespace nanolog
 		else
 		    std::this_thread::sleep_for(std::chrono::microseconds(50));
 	    }
-	    
+
 	    // Pop and log all remaining entries
 	    while (m_buffer_base.try_pop(logline))
 	    {
 		m_file_writer.write(logline);
 	    }
 	}
-	
+
     private:
 	enum class State
 	{
